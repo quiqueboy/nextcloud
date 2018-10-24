@@ -1,0 +1,109 @@
+version: '2'
+
+services:
+  db:
+    image: mariadb
+    restart: always
+    volumes:
+      - db:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=12345
+    env_file:
+      - db.env
+
+  app:
+    image: nextcloud:fpm
+    restart: always
+    volumes:
+      - nextcloud:/var/www/html
+    environment:
+      - MYSQL_HOST=db
+    env_file:
+      - db.env
+    links:
+      - db
+
+  collab:
+    image: collabora/code
+    environment:
+      - domain:localhost
+    volumes:
+      - collabora:/var/www/collabora/html
+    cap_add:
+      - MKNOD
+    ports:
+      - 9980:9980
+    links:
+      - app
+    environment:
+      - domain=localhost
+      - VIRTUAL_HOST=localhost/office
+      - VIRTUAL_NETWORK=nginx-proxy
+      - VIRTUAL_PORT=9980
+      - VIRTUAL_PROTO=https
+      - LETSENCRYPT_HOST=localhost/office
+      - LETSENCRYPT_EMAIL=quiquebboy2010@gmail.com
+    restart: always
+    networks:
+      - default
+
+  web:
+    build: ./web
+    restart: always
+    volumes:
+      - nextcloud:/var/www/html:ro
+      - collabora:/var/www/collabora/html
+      - certs:/etc/nginx/certs:ro
+      - ./web/collabora:/etc/nginx/sites-available/collabora:ro
+    environment:
+      - VIRTUAL_HOST=localhost
+    ports:
+      - 8080:80
+    depends_on:
+      - app
+    environment:
+      - VIRTUAL_HOST=localhost
+      - VIRTUAL_NETWORK=nginx-proxy
+      - LETSENCRYPT_HOST=localhost
+      - LETSENCRYPT_EMAIL=quiquebboy2010@gmail.com
+    networks:
+      - proxy-tier
+      - default
+
+  proxy:
+    build: ./proxy
+    restart: always
+    container_name: proxy
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./proxy/conf.d:/etc/nginx/conf.d
+      - vhost.d:/etc/nginx/vhost.d
+      - html:/usr/share/nginx/html
+      - certs:/etc/nginx/certs:ro
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    networks:
+      - proxy-tier
+
+  letsencrypt-companion:
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    container_name: letsencrypt-companion
+    volumes_from:
+      - proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - certs:/etc/nginx/certs:rw
+
+volumes:
+  db:
+  nextcloud:
+  certs:
+  vhost.d:
+  html:
+  collabora:
+
+networks:
+  proxy-tier:
+    external:
+      name: nginx-proxy

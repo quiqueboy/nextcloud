@@ -1,0 +1,132 @@
+version: '2'
+networks:
+  back:
+  proxy-tier:
+    driver: bridge
+
+volumes:
+  db:
+  nextcloud:
+  certs:
+  vhost.d:
+  html:
+  apps:
+  config:
+  resources:
+  data:
+
+services:
+  
+  db:
+    image: mariadb
+    restart: always
+    volumes:
+      - db:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD= 12345
+    env_file:
+      - db.env
+
+  web:
+    image: nginx
+    ports:
+      - 8080:80
+    volumes:
+      - ./web/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./web/docs:/etc/nginx/sites-available/docs:ro
+      - ./web/collab:/etc/nginx/sites-available/collab:ro
+      - apps:/var/www/html/apps
+      - config:/var/www/html/config
+      - resources:/var/www/html/resources
+      - data:/var/www/html/data
+    links:
+      - app
+    environment:
+      - VIRTUAL_HOST
+    networks:
+    - back
+    - proxy-tier
+    - default
+    restart: always      
+
+  app:
+    image: nextcloud:fpm
+    links:
+      - redis
+      - db
+    volumes:
+      - apps:/var/www/html/apps
+      - config:/var/www/html/config
+      - resources:/var/www/html/resources
+      - data:/var/www/html/data
+    networks:
+    - back
+    restart: always          
+  
+  cron:
+    build: ./app
+    restart: always
+    volumes:
+      - nextcloud:/var/www/html
+    entrypoint: /cron.sh
+    depends_on:
+      - db
+      - redis
+
+  redis:
+    image: redis
+    networks:
+      - back
+    restart: always
+  
+
+  collab:
+    image: collabora/code
+    environment:
+      # put the domain name you select for your NextCloud instance
+      # here! Escape any . in your domain name by preceding them with \\
+      domain: localhost
+      username: admin
+      # put your own strong password in here!
+      password: 12345
+    cap_add:
+      - MKNOD
+    networks:
+      - back
+    volumes_from:
+      - app
+    ports:
+      - 9980:9980
+    links:
+      - app
+    restart: always
+
+
+  proxy:
+    build: ./proxy
+    restart: always
+    ports:
+      - 80:80
+      - 443:443
+    labels:
+      com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy: "true"
+    volumes:
+      - certs:/etc/nginx/certs:ro
+      - vhost.d:/etc/nginx/vhost.d
+      - html:/usr/share/nginx/html
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    networks:
+      - proxy-tier
+
+  letsencrypt-companion:
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    restart: always
+    volumes:
+      - certs:/etc/nginx/certs
+      - vhost.d:/etc/nginx/vhost.d
+      - html:/usr/share/nginx/html
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy-tier
+    depends_on:
+      - proxy

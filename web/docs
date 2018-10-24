@@ -1,0 +1,35 @@
+server {
+    listen 80;
+    server_name localhost;
+
+    # redirect all HTTP traffic to HTTPS.
+    location / {
+        return  302 https://localhost$request_uri;
+    }
+}
+
+# This configuration assumes that there's an nginx container talking to the mautic PHP-fpm container,
+# and this is a reverse proxy for that Mautic instance.
+server {
+    listen 443 ssl;
+    server_name localhost;
+
+    ssl_certificate /etc/nginx/certs/servhostname.local.key;
+    ssl_certificate_key /etc/nginx/certs/servhostname.local.crt;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    keepalive_timeout 20s;
+
+   
+    location ^~ / {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $http_host;
+        proxy_read_timeout 36000s;
+    }
+    client_max_body_size 1G;
+    fastcgi_buffers 64 4K;
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header Strict-Transport-Security "max-age=31536000; includeSubdomains;";
+}

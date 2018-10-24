@@ -1,0 +1,40 @@
+server {
+    listen 80;
+    server_name localhost;
+
+    include /etc/nginx/includes/letsencrypt.conf;
+
+    # redirect all HTTP traffic to HTTPS.
+    location / {
+        return  302 https://localhost$request_uri;
+    }
+}
+
+# This configuration assumes that there's an nginx container talking to the mautic PHP-fpm container,
+# and this is a reverse proxy for that Mautic instance.
+server {
+    listen 443 ssl;
+    server_name localhost;
+
+    ssl_certificate /etc/letsencrypt/live/localhost/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/localhost/privkey.pem;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    # to create this, see https://raymii.org/s/tutorials/Strong_SSL_Security_On_nginx.html
+    ssl_dhparam /etc/ssl/certs/dhparam.pem;
+    keepalive_timeout 20s;
+
+    include /etc/nginx/includes/letsencrypt.conf;
+   
+    location ^~ / {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $http_host;
+        proxy_read_timeout 36000s;
+    }
+    client_max_body_size 1G;
+    fastcgi_buffers 64 4K;
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header Strict-Transport-Security "max-age=31536000; includeSubdomains;";
+}
